@@ -1,0 +1,7 @@
+{
+  "id": "c64cdefc-d88e-4f82-81d0-84b8d6ec3eca",
+  "type": "ArduCopter",
+  "link": "tcp://127.0.0.1:5762",
+  "common_name": "test drone",
+  "template": "110"
+}

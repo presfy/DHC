@@ -1,0 +1,214 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+	<title>Drone Horde Controller</title>
+	<STYLE>
+	#nav{
+		background-color: #ececec;
+		left: 0px;
+		display: block;
+		width: 20%;
+		height: 100%;
+		position: absolute;
+		overflow: scroll;
+	}
+	
+	#map{
+		right: 0px;
+		background-color: white;
+		display: block;
+		min-width: 80%;
+		height: 100%;
+		position: absolute;
+	}
+	
+	.head{
+		background-color: white;
+		display: block;
+		width: 100%;
+		height: 100px;
+	}
+	
+	.uav-block{
+		padding-top: 5px;
+		padding-bottom: 5px;
+		display: block;
+		margin: 0xp;
+		width: 100%;
+		min-height: 100px;
+		background-color: #ececec;
+	}
+		
+	.uav-block:hover{
+		background-color:#c2c2c2;
+	}
+	
+	.uav-block h1{
+		margin: 0px;
+		padding: 1%;
+	}
+	
+	.uav-block p{
+		margin: 0px;
+		padding-left: 5%
+	}
+	
+	#nav hr{
+		margin: 0px;
+	}
+	
+	body {margin:0px;}
+	</STYLE>
+</head>
+<body>
+	<div id="nav"></div>
+	<div id="map"></div>
+	<script src="/openlayers/OpenLayers.js"></script>
+	<script>
+		
+		async function DataDriver(command, requestjson) {
+			const response = await fetch("http://127.0.0.1:5000/update?c="+command+"&arg="+requestjson);
+			return await response.json();
+		}
+		
+		async function GetDroneUpdate(DroneID) {
+			a = await DataDriver("dronestat",`{"ID": "${DroneID}"}`);
+			return a;
+		}
+		async function GetDroneList() {
+			a = await DataDriver("dronelist","{}");
+			return a;
+		}
+		
+		async function initialize(){
+			await GetDroneList().then(a => {DroneListArr = a.toString().split(',');});
+			for (const i in DroneListArr){ await GetDroneUpdate(DroneListArr[i]).then(a => {DroneStats[DroneListArr[i]] = a;})};
+			
+		}
+		
+		async function updater(){
+			for (const i in DroneListArr){ 
+				await GetDroneUpdate(DroneListArr[i]).then(a => {DroneStats[DroneListArr[i]] = a;});
+				updateMapPointers(i);
+			}
+		}
+		
+		function pageRender(){
+			for (const i in DroneListArr){
+				let temp		= document.createElement('div');
+				temp.id 		= `${DroneListArr[i]}`;
+				temp.className 	= "uav-block";
+				temp.innerHTML	= `<h1><center> ${DroneStats[DroneListArr[i]]["name"]} </center></h1><p>battarey:  ${DroneStats[DroneListArr[i]]["battery"]["remaining_percent"] * 100}% ${DroneStats[DroneListArr[0]]["battery"]["voltage_v"].substr(0, 5)}V </p><p>arming status:  ${DroneStats[DroneListArr[i]]["armed"]}</p><center><button onclick="currentarm();">Arm</button><button onclick="currentdisarm();">Disarm</button><button onclick="currenttakeoff();">Takeoff</button><button onclick="currentland();">Land</button><button onclick="currentrtl();">RTL</button><button onclick="currentgoto();">Go to target</button></center>`;
+				document.getElementById("nav").append(temp);
+				temp.addEventListener("click", (event) => {selectDrone(DroneListArr[i])});
+				if (i < (DroneListArr.length - 1)){
+					document.getElementById("nav").append(document.createElement('hr'));
+				}
+			}
+			mapRender();
+		}
+		
+		function mapRender(){
+			for (const i in DroneListArr){
+				DroneID 		= DroneListArr[i];
+				var position 	= new OpenLayers.LonLat(DroneStats[DroneID]["pos"]["longitude_deg"], DroneStats[DroneID]["pos"]["latitude_deg"]).transform( fromProjection, toProjection);
+				var size		= new OpenLayers.Size(42,50);
+				var offset 		= new OpenLayers.Pixel(-(size.w/2), -size.h);
+				var icon 		= new OpenLayers.Icon('/openlayers/marker.png', size, offset);
+				DroneMarkers[DroneID] = new OpenLayers.Marker(position, icon);
+				markers.addMarker(DroneMarkers[DroneID]);
+			}
+		}
+		
+		function currentarm(){
+			setTimeout(() => {
+				if ( currentDroneID != null ){DataDriver('dronearm',`{"ID": "${currentDroneID}"}`);}
+			}, 1000);
+		}
+		
+		function currenttakeoff(){
+			setTimeout(() => {
+				if ( currentDroneID != null ){DataDriver('dronetakeoff',`{"ID": "${currentDroneID}"}`);}
+			}, 1000);
+		}
+		
+		function currentland(){
+			setTimeout(() => {
+				if ( currentDroneID != null ){DataDriver('droneland',`{"ID": "${currentDroneID}"}`);}
+			}, 1000);
+		}
+		
+		function currentdisarm(){
+			setTimeout(() => {
+				if ( currentDroneID != null ){DataDriver('dronedisarm',`{"ID": "${currentDroneID}"}`);}
+			}, 1000);
+		}
+		
+		function currentrtl(){
+			setTimeout(() => {
+				if ( currentDroneID != null ){DataDriver('dronertl',`{"ID": "${currentDroneID}"}`);}
+			}, 1000);
+		}
+		
+		function currentgoto(){
+			setTimeout(() => {
+				var lonlat = TargetMarker.lonlat.clone().transform(toProjection, fromProjection)
+				if ( currentDroneID != null ){DataDriver('dronegoto',`{"ID": "${currentDroneID}", "lon":${lonlat.lon}, "lat":${lonlat.lat}, "alt":100}`);}
+			}, 1000);
+		}
+		
+		function updateMapPointers(i){
+			var DroneID = DroneListArr[i];
+			var newpos = new OpenLayers.LonLat(DroneStats[DroneID]["pos"]["longitude_deg"], DroneStats[DroneID]["pos"]["latitude_deg"]).transform( fromProjection, toProjection);
+			var newPx = map.getLayerPxFromLonLat(newpos);
+			DroneMarkers[DroneID].moveTo(newPx);
+		}
+		
+		function handleMapClick(e)
+		{
+			var lonlat = map.getLonLatFromViewPortPx(e.xy);
+			if (TargetMarker == null){
+				TargetMarker 	= new OpenLayers.Marker(lonlat);
+				markers.addMarker(TargetMarker);
+			} else {
+				var newPx = map.getLayerPxFromLonLat(lonlat);
+				TargetMarker.moveTo(newPx);
+			}
+		}
+				
+		function selectDrone(DroneID) {
+			currentDroneID = DroneID;
+			for (let i = 0; i < document.getElementsByClassName("uav-block"); i++){
+				document.getElementsByClassName("uav-block")[i].style.backgroundColor="#ececec";
+			}
+			document.getElementById(DroneID).style.backgroundColor="#999999";
+			position = new OpenLayers.LonLat(DroneStats[DroneID]["pos"]["longitude_deg"], DroneStats[DroneID]["pos"]["latitude_deg"]).transform( fromProjection, toProjection);
+			map.setCenter(position, 18);
+		}
+		
+		var DroneListArr 	= [];
+		var DroneStats		= [];
+		var DroneMarkers	= [];
+		var currentDroneID 	= null;
+		var TargetMarker	= null;
+		
+		setTimeout(() => { initialize(); }, 2000);
+		setTimeout(() => { pageRender(); }, 3000);
+		setTimeout(() => {setInterval(() => {updater()}, 1000);}, 4000);
+		
+		var fromProjection 	= new OpenLayers.Projection("EPSG:4326");   // Transform from WGS 1984
+		var toProjection   	= new OpenLayers.Projection("EPSG:900913"); // to Spherical Mercator Projection
+
+		map					= new OpenLayers.Map("map");
+		var mapnik  	    = new OpenLayers.Layer.OSM();
+		map.addLayer(mapnik);
+
+		var markers			= new OpenLayers.Layer.Markers( "Markers" );
+
+		map.addLayer(markers);
+		map.events.register('click', map, handleMapClick);
+		map.setCenter(new OpenLayers.LonLat(0,0),18);
+		
+	</script>
+</body>
+</html>

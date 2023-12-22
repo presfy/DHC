@@ -1,0 +1,3 @@
+mavsdk
+flask
+flask_cors
